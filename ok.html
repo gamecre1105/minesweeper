@@ -93,4 +93,96 @@
   elUA.textContent = navigator.userAgent;
 
   function tick(){
-    elNow.textContent = new
+    elNow.textContent = new Date().toLocaleString();
+    requestAnimationFrame(()=>setTimeout(tick,500));
+  }
+  tick();
+
+  // ====== 精密位置（Geolocation + 逆ジオコーディング） ======
+  const geoOut = document.getElementById('geoOut');
+  async function reverseGeocode(lat, lng){
+    // OpenStreetMap Nominatim（軽く使う前提。大量アクセスは避けてください）
+    const url = new URL('https://nominatim.openstreetmap.org/reverse');
+    url.searchParams.set('lat', lat);
+    url.searchParams.set('lon', lng);
+    url.searchParams.set('format', 'jsonv2');
+    url.searchParams.set('accept-language', 'ja');
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' }});
+    if(!res.ok) throw new Error('reverse geocode failed');
+    const j = await res.json();
+    const a = j.address || {};
+    // 都道府県（state）・市区町村（city/town/village）など
+    const prefecture = a.state || a.province || '';
+    const city = a.city || a.town || a.village || a.county || '';
+    const road = a.road || '';
+    const disp = j.display_name || '';
+    return {prefecture, city, road, display: disp};
+  }
+
+  async function getGeo(highAccuracy=false){
+    if(!isHttps){
+      geoOut.textContent = '⚠ HTTPSではないため取得できません（localhostは可）。';
+      return;
+    }
+    geoOut.textContent = '取得中…（許可ダイアログが出ることがあります）';
+    const opts = { enableHighAccuracy: highAccuracy, timeout: 15000, maximumAge: 60000 };
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const { latitude, longitude, accuracy } = pos.coords;
+      let line = `精密位置: OK\nlat: ${latitude.toFixed(6)}\nlng: ${longitude.toFixed(6)}\n精度: ±${Math.round(accuracy)} m`;
+      try{
+        const rev = await reverseGeocode(latitude, longitude);
+        line += `\n\n住所(推定): ${rev.prefecture} ${rev.city} ${rev.road}\n詳細: ${rev.display}`;
+      }catch(e){
+        line += `\n\n住所(推定): 取得失敗`;
+      }
+      line += `\n取得方法: Geolocation API${highAccuracy?'（高精度）':''}`;
+      geoOut.textContent = line;
+    }, err=>{
+      const map = {1:'PERMISSION_DENIED(拒否)', 2:'POSITION_UNAVAILABLE(取得不能)', 3:'TIMEOUT(時間切れ)'};
+      geoOut.textContent = `精密位置: 失敗\ncode: ${err.code} ${map[err.code]||''}\nmsg: ${err.message}`;
+    }, opts);
+  }
+
+  document.getElementById('btnGeo').addEventListener('click', ()=>getGeo(false));
+  document.getElementById('btnGeoHi').addEventListener('click', ()=>getGeo(true));
+  document.getElementById('btnClear1').addEventListener('click', ()=>geoOut.textContent='');
+
+  // ====== 概略位置（IPベース：2サービス比較） ======
+  const ipOut = document.getElementById('ipOut');
+  async function ipapi(){
+    ipOut.textContent = 'ipapi.co から取得中…';
+    try{
+      const r = await fetch('https://ipapi.co/json/');
+      const d = await r.json();
+      ipOut.textContent =
+`概略位置: OK (ipapi.co)
+${d.city || '-'}, ${d.region || '-'}, ${d.country_name || '-'}
+lat: ${d.latitude ?? '-'}, lng: ${d.longitude ?? '-'}
+ISP/ORG: ${d.org || '-'}
+注: IPデータベースの更新状況や拠点位置によりズレることがあります。`;
+    }catch(e){
+      ipOut.textContent = 'ipapi.co: 失敗\n' + e;
+    }
+  }
+  async function ipwho(){
+    ipOut.textContent = 'ipwho.is から取得中…';
+    try{
+      const r = await fetch('https://ipwho.is/');
+      const d = await r.json();
+      ipOut.textContent =
+`概略位置: ${d.success ? 'OK' : '失敗'} (ipwho.is)
+${(d.city||'-')}, ${(d.region||'-')}, ${(d.country||'-')}
+lat: ${(d.latitude ?? '-')}, lng: ${(d.longitude ?? '-')}
+ISP: ${(d.connection && d.connection.isp) ? d.connection.isp : '-'}
+注: IP位置は拠点（例: 名古屋）の地点を返すことがあります。`;
+    }catch(e){
+      ipOut.textContent = 'ipwho.is: 失敗\n' + e;
+    }
+  }
+  document.getElementById('btnIp1').addEventListener('click', ipapi);
+  document.getElementById('btnIp2').addEventListener('click', ipwho);
+  document.getElementById('btnClear2').addEventListener('click', ()=>ipOut.textContent='');
+})();
+</script>
+</body>
+</html>
