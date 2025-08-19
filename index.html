@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>5×5 マインスイーパー</title>
+<style>
+  :root{
+    --board-size: min(92vmin, 420px);
+    --cell-gap: 6px;
+    --cell-radius: 10px;
+    --bg: #0f1220;
+    --panel: #171a2b;
+    --text: #e8ecf3;
+    --muted: #a9b0c3;
+    --accent: #4dd0e1;
+    --danger: #ff6b6b;
+    --ok: #a5d6a7;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; margin:0; background: radial-gradient(1200px 600px at 10% -10%, #1e2240, transparent) , var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, Arial, sans-serif; }
+  .wrap{ max-width: 720px; margin: 24px auto; padding: 16px; }
+  h1{ margin: 8px 0 16px; font-size: clamp(20px, 5vw, 28px); letter-spacing: .02em; display:flex; align-items:center; gap:.5rem;}
+  h1 .face{ font-size: 1.2em; cursor: pointer; user-select: none; transition: transform .15s; }
+  h1 .face:active{ transform: scale(.95); }
+
+  .hud{ display:flex; gap:12px; flex-wrap: wrap; align-items:center; background: var(--panel); border-radius: 14px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.25) inset, 0 8px 16px rgba(0,0,0,.25); }
+  .hud .item{ display:flex; align-items:center; gap:8px; background: rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); padding: 8px 10px; border-radius: 12px; font-weight: 600; letter-spacing:.02em;}
+  .hud .item .label{ color: var(--muted); font-weight:500; }
+  .btn{ cursor:pointer; border:none; border-radius: 12px; padding: 10px 14px; font-weight:700; background: linear-gradient(180deg, #2a2f52, #212544); color: var(--text); box-shadow: 0 6px 18px rgba(0,0,0,.3); transition: transform .12s, filter .12s; }
+  .btn:hover{ filter: brightness(1.05); }
+  .btn:active{ transform: translateY(1px) scale(.99); }
+  .hint{ color: var(--muted); font-size: .9rem; margin-top: 8px; }
+
+  .board{ width: var(--board-size); height: var(--board-size); margin: 16px auto 0; display:grid; grid-template-columns: repeat(5, 1fr); gap: var(--cell-gap); touch-action: manipulation; }
+  .cell{
+    user-select: none;
+    display:grid; place-items:center;
+    background: linear-gradient(180deg, #2c3157, #24294a);
+    border: 1px solid rgba(255,255,255,.08);
+    border-bottom-color: rgba(0,0,0,.5);
+    border-radius: var(--cell-radius);
+    box-shadow: 0 3px 0 rgba(0,0,0,.45), 0 10px 18px rgba(0,0,0,.25);
+    color:#fff; font-weight:800; font-size: clamp(18px, 6vmin, 26px);
+    aspect-ratio: 1/1; cursor:pointer; position:relative; outline:none;
+  }
+  .cell:focus-visible{ box-shadow: 0 0 0 3px #4dd0e155, 0 3px 0 rgba(0,0,0,.45), 0 10px 18px rgba(0,0,0,.25); }
+  .cell.revealed{
+    background: linear-gradient(180deg, #1b203c, #171a31);
+    border-color: rgba(255,255,255,.05);
+    box-shadow: inset 0 8px 20px rgba(0,0,0,.45);
+    cursor: default;
+  }
+  .cell.mine.revealed{ background: linear-gradient(180deg, #401c2a, #2c1420); }
+  .cell.flag::after{ content:"🚩"; position:absolute; font-size: clamp(18px, 6vmin, 26px); }
+  .cell.mine.revealed::after{ content:"💣"; filter: drop-shadow(0 0 6px rgba(0,0,0,.4)); }
+
+  .n1{ color:#4fc3f7; } .n2{ color:#81c784; } .n3{ color:#e57373; } .n4{ color:#9575cd; }
+  .n5{ color:#ffb74d; } .n6{ color:#4db6ac; } .n7{ color:#90a4ae; } .n8{ color:#ef5350; }
+
+  .footer{ text-align:center; color:var(--muted); margin-top:16px; font-size:.9rem;}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1><span class="face" id="face" title="リセット">🙂</span> 5×5 マインスイーパー</h1>
+    <div class="hud">
+      <div class="item"><span class="label">地雷</span><span id="minesLeft">--</span></div>
+      <div class="item"><span class="label">タイム</span><span id="timer">0.0</span>s</div>
+      <button class="btn" id="resetBtn">リセット</button>
+    </div>
+    <div class="hint">PC: 左クリック=開く / 右クリック=旗　｜　スマホ: <b>長押し</b>=旗　｜　キーボード: 矢印で移動、<kbd>Enter</kbd>=開く、<kbd>F</kbd>=旗</div>
+    <div class="board" id="board" aria-label="マインスイーパー盤面"></div>
+    <div class="footer">最初のクリックは安全です。クリアしたら顔が<span style="filter:hue-rotate(25deg)">😎</span>に！</div>
+  </div>
+
+<script>
+(() => {
+  const W = 5, H = 5;
+  const MINES = 5;
+  const LONG_PRESS_MS = 420;
+
+  let board = [];
+  let firstClick = true;
+  let flags = 0;
+  let revealedCount = 0;
+  let running = false;
+  let startTime = 0;
+  let timerId = null;
+
+  const elBoard = document.getElementById('board');
+  const elMinesLeft = document.getElementById('minesLeft');
+  const elTimer = document.getElementById('timer');
+  const elReset = document.getElementById('resetBtn');
+  const elFace = document.getElementById('face');
+
+  const inBounds = (x,y) => x>=0 && y>=0 && x<W && y<H;
+  const neighbors = (x,y) => {
+    const res=[];
+    for(let dy=-1; dy<=1; dy++){
+      for(let dx=-1; dx<=1; dx++){
+        if(dx===0 && dy===0) continue;
+        const nx=x+dx, ny=y+dy;
+        if(inBounds(nx,ny)) res.push({x:nx,y:ny});
+      }
+    }
+    return res;
+  };
+
+  function startTimer(){
+    startTime = performance.now();
+    running = true;
+    const tick = () => {
+      if(!running) return;
+      const t = (performance.now() - startTime)/1000;
+      elTimer.textContent = t.toFixed(1);
+      timerId = requestAnimationFrame(tick);
+    };
+    timerId = requestAnimationFrame(tick);
+  }
+  function stopTimer(){
+    running = false;
+    if(timerId) cancelAnimationFrame(timerId);
+    timerId = null;
+  }
+
+  function createEmptyBoard(){
+    board = [];
+    elBoard.innerHTML = '';
+    elBoard.style.gridTemplateColumns = `repeat(${W}, 1fr)`;
+    for(let y=0;y<H;y++){
+      const row=[];
+      for(let x=0;x<W;x++){
+        const el = document.createElement('button');
+        el.className = 'cell';
+        el.setAttribute('data-x', x);
+        el.setAttribute('data-y', y);
+        el.setAttribute('aria-label', '未開封');
+        el.tabIndex = 0;
+        attachCellEvents(el);
+        elBoard.appendChild(el);
+        row.push({ x, y, mine:false, adj:0, revealed:false, flagged:false, el });
+      }
+      board.push(row);
+    }
+    flags = 0; revealedCount = 0; firstClick = true;
+    elMinesLeft.textContent = MINES;
+    elTimer.textContent = '0.0';
+    elFace.textContent = '🙂';
+    stopTimer();
+  }
+
+  function placeMines(excludeX, excludeY){
+    let placed = 0;
+    while(placed < MINES){
+      const x = Math.floor(Math.random()*W);
+      const y = Math.floor(Math.random()*H);
+      if((x===excludeX && y===excludeY) || board[y][x].mine) continue;
+      board[y][x].mine = true;
+      placed++;
+    }
+    for(let y=0;y<H;y++){
+      for(let x=0;x<W;x++){
+        if(board[y][x].mine){ board[y][x].adj = -1; continue; }
+        board[y][x].adj = neighbors(x,y).reduce((n,p)=> n + (board[p.y][p.x].mine?1:0), 0);
+      }
+    }
+  }
+
+  function attachCellEvents(el){
+    el.addEventListener('click', () => {
+      const {x,y} = getXY(el);
+      onReveal(x,y);
+    });
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const {x,y} = getXY(el);
+      onToggleFlag(x,y);
+    });
+
+    let pressTimer = null, pressed = false, moved = false;
+    el.addEventListener('pointerdown', (e) => {
+      pressed = true; moved = false;
+      if(e.pointerType === 'touch'){
+        pressTimer = setTimeout(() => {
+          if(pressed && !moved){
+            const {x,y} = getXY(el);
+            onToggleFlag(x,y);
+          }
+        }, LONG_PRESS_MS);
+      }
+    });
+    el.addEventListener('pointermove', () => { moved = true; });
+    const cancelPress = () => { pressed = false; if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } };
+    el.addEventListener('pointerup', cancelPress);
+    el.addEventListener('pointercancel', cancelPress);
+
+    el.addEventListener('keydown', (e) => {
+      const key = e.key.toLowerCase();
+      const {x,y} = getXY(el);
+      if(key === 'enter'){ onReveal(x,y); }
+      else if(key === 'f'){ onToggleFlag(x,y); }
+      else if(['arrowup','arrowdown','arrowleft','arrowright'].includes(key)){
+        e.preventDefault();
+        const d = {arrowup:[0,-1], arrowdown:[0,1], arrowleft:[-1,0], arrowright:[1,0]}[key];
+        const nx = Math.max(0, Math.min(W-1, x + d[0]));
+        const ny = Math.max(0, Math.min(H-1, y + d[1]));
+        board[ny][nx].el.focus();
+      }
+    });
+  }
+  const getXY = el => ({ x: +el.getAttribute('data-x'), y: +el.getAttribute('data-y') });
+
+  function onToggleFlag(x,y){
+    const c = board[y][x];
+    if(c.revealed) return;
+    c.flagged = !c.flagged;
+    c.el.classList.toggle('flag', c.flagged);
+    c.el.setAttribute('aria-label', c.flagged ? '旗' : '未開封');
+    flags += c.flagged ? 1 : -1;
+    elMinesLeft.textContent = Math.max(0, MINES - flags);
+    checkWin();
+  }
+
+  function onReveal(x,y){
+    // ★修正：最初のクリックで必ず地雷を配置
+    if(firstClick){
+      placeMines(x,y);
+      firstClick = false;
+      startTimer();
+    }
+    const c = board[y][x];
+    if(c.revealed || c.flagged) return;
+
+    c.revealed = true;
+    c.el.classList.add('revealed');
+    c.el.removeAttribute('tabindex');
+    revealedCount++;
+    if(c.mine){
+      revealAllMines(c);
+      gameOver(false);
+      return;
+    }
+    if(c.adj>0){
+      c.el.textContent = c.adj;
+      c.el.classList.add('n'+c.adj);
+      c.el.setAttribute('aria-label', `数${c.adj}`);
+    }else{
+      c.el.textContent = '';
+      c.el.setAttribute('aria-label', '空白');
+      floodFill(x,y);
+    }
+    checkWin();
+  }
+
+  function floodFill(sx,sy){
+    const q = [{x:sx,y:sy}];
+    const seen = new Set([sx+','+sy]);
+    while(q.length){
+      const {x,y} = q.shift();
+      for(const p of neighbors(x,y)){
+        const c = board[p.y][p.x];
+        if(c.revealed || c.flagged) continue;
+        c.revealed = true;
+        c.el.classList.add('revealed');
+        c.el.removeAttribute('tabindex');
+        revealedCount++;
+        if(c.mine) continue;
+        if(c.adj>0){
+          c.el.textContent = c.adj;
+          c.el.classList.add('n'+c.adj);
+          c.el.setAttribute('aria-label', `数${c.adj}`);
+        }else{
+          c.el.textContent = '';
+          c.el.setAttribute('aria-label', '空白');
+          const key = p.x+','+p.y;
+          if(!seen.has(key)){
+            seen.add(key);
+            q.push({x:p.x,y:p.y});
+          }
+        }
+      }
+    }
+  }
+
+  function revealAllMines(trigger){
+    for(let y=0;y<H;y++){
+      for(let x=0;x<W;x++){
+        const c = board[y][x];
+        if(c.mine){
+          c.el.classList.add('revealed','mine');
+          c.el.textContent = '';
+        }
+      }
+    }
+    if(trigger){ trigger.el.style.outline = '2px solid var(--danger)'; }
+  }
+
+  function checkWin(){
+    const safeCells = W*H - MINES;
+    if(revealedCount >= safeCells){
+      gameOver(true);
+    }
+  }
+  function gameOver(win){
+    stopTimer();
+    for(let y=0;y<H;y++){
+      for(let x=0;x<W;x++){
+        board[y][x].el.style.pointerEvents = 'none';
+      }
+    }
+    elFace.textContent = win ? '😎' : '💥';
+    if(win){
+      for(let y=0;y<H;y++){
+        for(let x=0;x<W;x++){
+          const c = board[y][x];
+          if(c.mine && !c.flagged){ c.flagged = true; c.el.classList.add('flag'); }
+        }
+      }
+      elMinesLeft.textContent = 0;
+    }
+  }
+
+  function reset(){
+    createEmptyBoard();
+    running = false; // ★修正：初期は停止。最初のクリックで配置＆スタート
+  }
+
+  elReset.addEventListener('click', reset);
+  elFace.addEventListener('click', reset);
+  elBoard.addEventListener('contextmenu', (e)=> e.preventDefault());
+
+  reset();
+})();
+</script>
+</body>
+</html>
