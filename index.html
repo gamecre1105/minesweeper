@@ -94,6 +94,12 @@
   const elReset = document.getElementById('resetBtn');
   const elFace = document.getElementById('face');
 
+  // ★効果音を準備
+  const sfxHit = new Audio('hit.mp3');
+  sfxHit.preload = 'auto';
+  const sfxClear = new Audio('crea.mp3');
+  sfxClear.preload = 'auto';
+
   const inBounds = (x,y) => x>=0 && y>=0 && x<W && y<H;
   const neighbors = (x,y) => {
     const res=[];
@@ -223,7 +229,6 @@
   }
 
   function onReveal(x,y){
-    // ★修正：最初のクリックで必ず地雷を配置
     if(firstClick){
       placeMines(x,y);
       firstClick = false;
@@ -236,11 +241,14 @@
     c.el.classList.add('revealed');
     c.el.removeAttribute('tabindex');
     revealedCount++;
+
     if(c.mine){
+      try { sfxHit.currentTime = 0; sfxHit.play(); } catch(e) {}
       revealAllMines(c);
       gameOver(false);
       return;
     }
+
     if(c.adj>0){
       c.el.textContent = c.adj;
       c.el.classList.add('n'+c.adj);
@@ -302,6 +310,7 @@
       gameOver(true);
     }
   }
+
   function gameOver(win){
     stopTimer();
     for(let y=0;y<H;y++){
@@ -311,6 +320,7 @@
     }
     elFace.textContent = win ? '😎' : '💥';
     if(win){
+      try { sfxClear.currentTime = 0; sfxClear.play(); } catch(e) {}
       for(let y=0;y<H;y++){
         for(let x=0;x<W;x++){
           const c = board[y][x];
@@ -323,7 +333,7 @@
 
   function reset(){
     createEmptyBoard();
-    running = false; // ★修正：初期は停止。最初のクリックで配置＆スタート
+    running = false;
   }
 
   elReset.addEventListener('click', reset);
