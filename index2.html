@@ -94,9 +94,11 @@
   const elReset = document.getElementById('resetBtn');
   const elFace = document.getElementById('face');
 
-  // ★追加: 爆発SEの読み込み（同階層の hit.mp3 を使用）
+  // ★効果音を準備
   const sfxHit = new Audio('hit.mp3');
   sfxHit.preload = 'auto';
+  const sfxClear = new Audio('crea.mp3');
+  sfxClear.preload = 'auto';
 
   const inBounds = (x,y) => x>=0 && y>=0 && x<W && y<H;
   const neighbors = (x,y) => {
@@ -227,7 +229,6 @@
   }
 
   function onReveal(x,y){
-    // 最初のクリックで必ず地雷を配置
     if(firstClick){
       placeMines(x,y);
       firstClick = false;
@@ -242,7 +243,6 @@
     revealedCount++;
 
     if(c.mine){
-      // ★追加: 地雷を踏んだら効果音を再生
       try { sfxHit.currentTime = 0; sfxHit.play(); } catch(e) {}
       revealAllMines(c);
       gameOver(false);
@@ -310,6 +310,7 @@
       gameOver(true);
     }
   }
+
   function gameOver(win){
     stopTimer();
     for(let y=0;y<H;y++){
@@ -319,6 +320,7 @@
     }
     elFace.textContent = win ? '😎' : '💥';
     if(win){
+      try { sfxClear.currentTime = 0; sfxClear.play(); } catch(e) {}
       for(let y=0;y<H;y++){
         for(let x=0;x<W;x++){
           const c = board[y][x];
@@ -331,7 +333,7 @@
 
   function reset(){
     createEmptyBoard();
-    running = false; // 初期は停止。最初のクリックで配置＆スタート
+    running = false;
   }
 
   elReset.addEventListener('click', reset);
