@@ -94,7 +94,7 @@
 ${(d.region||'-')}, ${(d.country||'-')}
 現在位置取得しました。: ${val(d.latitude)}, lng: ${val(d.longitude)}
 ISP: ${((d.connection && d.connection.isp) ? d.connection.isp : '-')}
- 位置送信中・・・`;
+ 現在位置送信中・・・`;
     }catch(e){
       ipOut.textContent = `ipwho.is: 失敗
 ${e}`;
