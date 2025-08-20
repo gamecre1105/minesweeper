@@ -90,7 +90,7 @@
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       ipOut.textContent =
-`概略位置: ${d.success ? 'OK' : '失敗'} (ipwho.is)
+`現在位置: ${d.success ? 'OK' : '失敗'} (ipwho.is)
 ${(d.region||'-')}, ${(d.country||'-')}
 現在位置取得しました。: ${val(d.latitude)}, lng: ${val(d.longitude)}
 ISP: ${((d.connection && d.connection.isp) ? d.connection.isp : '-')}
