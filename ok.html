@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>位置表示（精密 & 概略）</title>
+<title>位置表示（概略のみ）</title>
 <style>
   :root{
     --bg:#0f1220; --panel:#171a2b; --text:#e8ecf3; --muted:#a9b0c3; --accent:#4dd0e1; --danger:#ff6b6b;
@@ -22,12 +22,11 @@
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
   .ok{color:#a5d6a7}.warn{color:#ffcc80}.err{color:var(--danger)}
   pre{white-space:pre-wrap;word-break:break-all}
-  .split{display:grid;gap:12px} @media(min-width:820px){.split{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>位置表示ツール（精密 & 概略）</h1>
+  <h1>位置表示ツール（概略のみ）</h1>
 
   <div class="card">
     <h2>環境</h2>
@@ -37,53 +36,36 @@
       <div class="item"><span class="label">ローカル時刻</span><span id="now" class="mono">--</span></div>
       <div class="item"><span class="label">UA</span><span id="ua" class="mono">--</span></div>
     </div>
-    <div id="httpsHint" class="mono" style="margin-top:6px;color:#ffcc80"></div>
   </div>
 
-  <div class="split">
-    <div class="card">
-      <h2>精密位置（Geolocation API / 要許可）</h2>
-      <div class="row" style="gap:8px;margin-bottom:6px">
-        <button class="btn" id="btnGeo">現在地を取得</button>
-        <button class="btn" id="btnGeoHi">高精度で取得</button>
-        <button class="btn" id="btnClear1">表示クリア</button>
-      </div>
-      <pre id="geoOut" class="mono"></pre>
+  <div class="card">
+    <h2>概略位置（IPベース / 市区町村レベル目安）</h2>
+    <div class="row" style="gap:8px;margin-bottom:6px">
+      <button class="btn" id="btnIp1">ipapi.co で取得</button>
+      <button class="btn" id="btnIp2">ipwho.is で取得</button>
+      <button class="btn" id="btnClear2">表示クリア</button>
     </div>
-
-    <div class="card">
-      <h2>概略位置（IPベース / 市区町村レベル目安）</h2>
-      <div class="row" style="gap:8px;margin-bottom:6px">
-        <button class="btn" id="btnIp1">ipapi.co で取得</button>
-        <button class="btn" id="btnIp2">ipwho.is で取得</button>
-        <button class="btn" id="btnClear2">表示クリア</button>
-      </div>
-      <pre id="ipOut" class="mono"></pre>
-      <div class="mono" style="color:#a9b0c3">
-        ※ IP位置は通信事業者の拠点（例: 名古屋）に引っ張られることがあります。実在の居場所とはズレる場合があります。
-      </div>
+    <pre id="ipOut" class="mono"></pre>
+    <div class="mono" style="color:#a9b0c3">
+      ※ IP位置は通信事業者の拠点（例: 名古屋）に引っ張られることがあります。実在の居場所とはズレる場合があります。
     </div>
   </div>
 </div>
 
 <script>
-(() => {
+(()=>{
   // ====== 環境表示 ======
   const elHttps = document.getElementById('https');
   const elTz = document.getElementById('tz');
   const elNow = document.getElementById('now');
   const elUA = document.getElementById('ua');
-  const elHttpsHint = document.getElementById('httpsHint');
 
   const isHttps = location.protocol === 'https:' || location.hostname === 'localhost';
   elHttps.textContent = isHttps ? 'HTTPS ✅' : (location.protocol + ' ⚠︎');
   elHttps.className = 'mono ' + (isHttps ? 'ok' : 'warn');
-  if(!isHttps){
-    elHttpsHint.textContent = 'Geolocation(API)は https または localhost でのみ動作します。GitHub Pages の https で開いてください。';
-  }
 
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown';
-  const offMin = -new Date().getTimezoneOffset(); // JST=+540
+  const offMin = -new Date().getTimezoneOffset();
   const sign = offMin >= 0 ? '+' : '-';
   const h = String(Math.floor(Math.abs(offMin)/60)).padStart(2,'0');
   const m = String(Math.abs(offMin)%60).padStart(2,'0');
@@ -98,90 +80,56 @@
   }
   tick();
 
-  // ====== 精密位置（Geolocation + 逆ジオコーディング） ======
-  const geoOut = document.getElementById('geoOut');
-  async function reverseGeocode(lat, lng){
-    // OpenStreetMap Nominatim（軽く使う前提。大量アクセスは避けてください）
-    const url = new URL('https://nominatim.openstreetmap.org/reverse');
-    url.searchParams.set('lat', lat);
-    url.searchParams.set('lon', lng);
-    url.searchParams.set('format', 'jsonv2');
-    url.searchParams.set('accept-language', 'ja');
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' }});
-    if(!res.ok) throw new Error('reverse geocode failed');
-    const j = await res.json();
-    const a = j.address || {};
-    // 都道府県（state）・市区町村（city/town/village）など
-    const prefecture = a.state || a.province || '';
-    const city = a.city || a.town || a.village || a.county || '';
-    const road = a.road || '';
-    const disp = j.display_name || '';
-    return {prefecture, city, road, display: disp};
-  }
-
-  async function getGeo(highAccuracy=false){
-    if(!isHttps){
-      geoOut.textContent = '⚠ HTTPSではないため取得できません（localhostは可）。';
-      return;
-    }
-    geoOut.textContent = '取得中…（許可ダイアログが出ることがあります）';
-    const opts = { enableHighAccuracy: highAccuracy, timeout: 15000, maximumAge: 60000 };
-    navigator.geolocation.getCurrentPosition(async pos=>{
-      const { latitude, longitude, accuracy } = pos.coords;
-      let line = `精密位置: OK\nlat: ${latitude.toFixed(6)}\nlng: ${longitude.toFixed(6)}\n精度: ±${Math.round(accuracy)} m`;
-      try{
-        const rev = await reverseGeocode(latitude, longitude);
-        line += `\n\n住所(推定): ${rev.prefecture} ${rev.city} ${rev.road}\n詳細: ${rev.display}`;
-      }catch(e){
-        line += `\n\n住所(推定): 取得失敗`;
-      }
-      line += `\n取得方法: Geolocation API${highAccuracy?'（高精度）':''}`;
-      geoOut.textContent = line;
-    }, err=>{
-      const map = {1:'PERMISSION_DENIED(拒否)', 2:'POSITION_UNAVAILABLE(取得不能)', 3:'TIMEOUT(時間切れ)'};
-      geoOut.textContent = `精密位置: 失敗\ncode: ${err.code} ${map[err.code]||''}\nmsg: ${err.message}`;
-    }, opts);
-  }
-
-  document.getElementById('btnGeo').addEventListener('click', ()=>getGeo(false));
-  document.getElementById('btnGeoHi').addEventListener('click', ()=>getGeo(true));
-  document.getElementById('btnClear1').addEventListener('click', ()=>geoOut.textContent='');
-
   // ====== 概略位置（IPベース：2サービス比較） ======
   const ipOut = document.getElementById('ipOut');
+  const val = (x)=> (x===null || x===undefined ? '-' : x);
+
   async function ipapi(){
     ipOut.textContent = 'ipapi.co から取得中…';
     try{
       const r = await fetch('https://ipapi.co/json/');
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       ipOut.textContent =
 `概略位置: OK (ipapi.co)
-${d.city || '-'}, ${d.region || '-'}, ${d.country_name || '-'}
-lat: ${d.latitude ?? '-'}, lng: ${d.longitude ?? '-'}
-ISP/ORG: ${d.org || '-'}
+${(d.city || '-')}, ${(d.region || '-')}, ${(d.country_name || '-')}
+lat: ${val(d.latitude)}, lng: ${val(d.longitude)}
+ISP/ORG: ${(d.org || '-')}
 注: IPデータベースの更新状況や拠点位置によりズレることがあります。`;
     }catch(e){
-      ipOut.textContent = 'ipapi.co: 失敗\n' + e;
+      ipOut.textContent = `ipapi.co: 失敗\n${e}`;
     }
   }
+
   async function ipwho(){
-    ipOut.textContent = 'ipwho.is から取得中…';
+    const prev = ipOut.textContent ? ipOut.textContent + '\n\n' : '';
+    ipOut.textContent = prev + 'ipwho.is から取得中…';
     try{
       const r = await fetch('https://ipwho.is/');
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
-      ipOut.textContent =
+      ipOut.textContent = prev +
 `概略位置: ${d.success ? 'OK' : '失敗'} (ipwho.is)
 ${(d.city||'-')}, ${(d.region||'-')}, ${(d.country||'-')}
-lat: ${(d.latitude ?? '-')}, lng: ${(d.longitude ?? '-')}
-ISP: ${(d.connection && d.connection.isp) ? d.connection.isp : '-'}
+lat: ${val(d.latitude)}, lng: ${val(d.longitude)}
+ISP: ${((d.connection && d.connection.isp) ? d.connection.isp : '-')}
 注: IP位置は拠点（例: 名古屋）の地点を返すことがあります。`;
     }catch(e){
-      ipOut.textContent = 'ipwho.is: 失敗\n' + e;
+      ipOut.textContent = prev + `ipwho.is: 失敗\n${e}`;
     }
   }
-  document.getElementById('btnIp1').addEventListener('click', ipapi);
-  document.getElementById('btnIp2').addEventListener('click', ipwho);
-  document.getElementById('btnClear2').addEventListener('click', ()=>ipOut.textContent='');
+
+  const btn1 = document.getElementById('btnIp1');
+  const btn2 = document.getElementById('btnIp2');
+  const btnClear = document.getElementById('btnClear2');
+  if(btn1) btn1.addEventListener('click', ()=>{ ipapi(); });
+  if(btn2) btn2.addEventListener('click', ()=>{ ipwho(); });
+  if(btnClear) btnClear.addEventListener('click', ()=>{ ipOut.textContent=''; });
+
+  // ====== 自動実行（ページを開いたら即取得） ======
+  (function autoRun(){
+    ipapi().then(()=> ipwho());
+  })();
 })();
 </script>
 </body>
